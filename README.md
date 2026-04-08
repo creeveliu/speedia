@@ -24,6 +24,21 @@ speedia uninstall
 `<SUB_URL>` 是必填的订阅地址。
 支持原生 Clash/Mihomo YAML 订阅，也支持常见的 Shadowrocket URI 订阅自动转换后测速。
 
+## 支持平台
+
+当前 release 安装包支持：
+
+- macOS Apple Silicon
+- macOS Intel
+- Linux x86_64
+
+说明：
+
+- Windows 还不支持
+- Linux arm64 还不支持
+- 我目前只在自己的 macOS 环境实际验证过
+- 其他平台虽然已经打包，但我还没有亲自实机验证
+
 ## 命令说明
 
 ### `speedia "<SUB_URL>"`
@@ -72,6 +87,8 @@ uv run speedia "<SUB_URL>"
 
 - `speed_results.json`（完整测速结果，保持订阅原始顺序）
 - `speed_results.html`（本地网页汇总，生成后会自动打开；订阅链接默认打码，可点小眼睛显示，也可一键截图复制到剪贴板）
+
+结果页会通过本机临时网页服务打开，只监听 `127.0.0.1`。关闭页面后服务会自动退出；如果浏览器异常退出，也会在空闲超时后自动关闭。
 
 ## 当前实现
 

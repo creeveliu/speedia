@@ -4,11 +4,13 @@ import ast
 import base64
 import binascii
 import html
+import http.server
 import json
 import os
 import platform
 import re
 import shutil
+import socketserver
 import subprocess
 import sys
 import tempfile
@@ -26,7 +28,7 @@ from requests.exceptions import RequestException
 DEFAULT_SECRET = "speedia"
 REPO_OWNER = "creeveliu"
 REPO_NAME = "speedia"
-DEFAULT_VERSION = "0.1.4"
+DEFAULT_VERSION = "0.1.5"
 GROUP = ""  # 留空会自动选节点最多的组
 LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
 
@@ -34,6 +36,7 @@ API = "http://127.0.0.1:19090"
 HTTP_PROXY = "http://127.0.0.1:17893"
 TEST_URL = "https://speed.cloudflare.com/__down?bytes=3000000"
 MAX_TIME = 8
+REPORT_SERVER_IDLE_TIMEOUT = 900
 
 def get_managed_bin_dir() -> Path:
     return Path.home() / ".local" / "bin"
@@ -711,6 +714,7 @@ def render_html_report(group: str, tested_at: str, subscription_url: str, result
   </div>
   <script>
     let subUrlVisible = false;
+    const speediaClientId = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
 
     function toggleSubUrl() {{
       const subUrl = document.getElementById("sub-url");
@@ -724,45 +728,22 @@ def render_html_report(group: str, tested_at: str, subscription_url: str, result
 
     async function shareScreenshot() {{
       const button = document.getElementById("share-screenshot");
-      const wrap = document.querySelector(".wrap");
       const originalText = button.textContent;
       button.disabled = true;
       button.textContent = "生成中...";
       try {{
-        const width = Math.ceil(wrap.scrollWidth);
-        const height = Math.ceil(wrap.scrollHeight);
-        const styleText = Array.from(document.querySelectorAll("style")).map((node) => node.textContent).join("\\n");
-        const markup = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="${{width}}" height="${{height}}">
-            <foreignObject width="100%" height="100%">
-              <div xmlns="http://www.w3.org/1999/xhtml">
-                <style>${{styleText}}</style>
-                ${{wrap.outerHTML}}
-              </div>
-            </foreignObject>
-          </svg>
-        `;
-        const blob = new Blob([markup], {{ type: "image/svg+xml;charset=utf-8" }});
-        const url = URL.createObjectURL(blob);
-        const image = new Image();
-        image.src = url;
-        await new Promise((resolve, reject) => {{
-          image.onload = resolve;
-          image.onerror = reject;
-        }});
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext("2d");
-        context.drawImage(image, 0, 0);
-        URL.revokeObjectURL(url);
-        const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        const pngBlob = await drawReportImage();
         if (!pngBlob) {{
           throw new Error("截图生成失败");
         }}
-        await navigator.clipboard.write([
-          new ClipboardItem({{ "image/png": pngBlob }})
-        ]);
+        const response = await fetch("/_share_image", {{
+          method: "POST",
+          headers: {{ "Content-Type": "image/png" }},
+          body: pngBlob,
+        }});
+        if (!response.ok) {{
+          throw new Error(await response.text());
+        }}
         button.textContent = "已复制到剪贴板";
       }} catch (error) {{
         console.error(error);
@@ -773,6 +754,100 @@ def render_html_report(group: str, tested_at: str, subscription_url: str, result
         button.textContent = originalText;
       }}, 1600);
     }}
+
+    async function drawReportImage() {{
+      const rows = Array.from(document.querySelectorAll("tbody tr")).map((row) => Array.from(row.children).map((cell) => cell.textContent.trim()));
+      const paddingX = 32;
+      const top = 32;
+      const contentWidth = 1080;
+      const tableTop = 210;
+      const rowHeight = 54;
+      const headerHeight = 54;
+      const cardHeight = headerHeight + rows.length * rowHeight;
+      const height = tableTop + cardHeight + 40;
+      const canvas = document.createElement("canvas");
+      canvas.width = contentWidth;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      const subUrlText = document.getElementById("sub-url").textContent.trim();
+      const subUrlState = document.getElementById("sub-url-state").textContent.trim();
+
+      ctx.fillStyle = "#f4f7fb";
+      ctx.fillRect(0, 0, contentWidth, height);
+
+      ctx.fillStyle = "#1b2430";
+      ctx.font = "bold 28px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      ctx.fillText("Speedia 测速结果", paddingX, top + 30);
+
+      ctx.fillStyle = "#5b6878";
+      ctx.font = "14px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      ctx.fillText(document.querySelector(".meta").textContent.trim(), paddingX, top + 70);
+
+      ctx.font = "14px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillText(`订阅链接：${{subUrlText}}  ${{subUrlState}}`, paddingX, top + 112);
+
+      drawRoundRect(ctx, paddingX, tableTop, contentWidth - paddingX * 2, cardHeight, 14, "#ffffff", "#dce5ef");
+
+      const colX = [paddingX + 28, paddingX + 140, paddingX + 760, paddingX + 900];
+      ctx.fillStyle = "#f8fbff";
+      ctx.fillRect(paddingX + 1, tableTop + 1, contentWidth - paddingX * 2 - 2, headerHeight - 1);
+
+      ctx.fillStyle = "#1b2430";
+      ctx.font = "600 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      ["#", "节点", "状态", "速度"].forEach((label, index) => {{
+        ctx.fillText(label, colX[index], tableTop + 34);
+      }});
+
+      rows.forEach((cells, rowIndex) => {{
+        const y = tableTop + headerHeight + rowIndex * rowHeight;
+        ctx.strokeStyle = "#e8eef5";
+        ctx.beginPath();
+        ctx.moveTo(paddingX, y);
+        ctx.lineTo(contentWidth - paddingX, y);
+        ctx.stroke();
+
+        ctx.font = "14px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.fillStyle = "#1b2430";
+        ctx.fillText(cells[0], colX[0], y + 33);
+        ctx.fillText(cells[1], colX[1], y + 33);
+        ctx.fillStyle = cells[2] === "成功" ? "#067647" : "#b42318";
+        ctx.fillText(cells[2], colX[2], y + 33);
+        ctx.fillStyle = "#1b2430";
+        ctx.fillText(cells[3], colX[3], y + 33);
+      }});
+
+      return await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    }}
+
+    function drawRoundRect(ctx, x, y, width, height, radius, fillColor, strokeColor) {{
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + width - radius, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+      ctx.lineTo(x + width, y + height - radius);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+      ctx.lineTo(x + radius, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+      ctx.fillStyle = fillColor;
+      ctx.fill();
+      ctx.strokeStyle = strokeColor;
+      ctx.stroke();
+    }}
+
+    fetch(`/_client_open?id=${{encodeURIComponent(speediaClientId)}}`, {{
+      method: "POST",
+    }}).catch(() => {{}});
+
+    addEventListener("pagehide", () => {{
+      navigator.sendBeacon(`/_client_close?id=${{encodeURIComponent(speediaClientId)}}`, new Blob([], {{ type: "text/plain" }}));
+    }});
+
+    addEventListener("beforeunload", () => {{
+      navigator.sendBeacon(`/_client_close?id=${{encodeURIComponent(speediaClientId)}}`, new Blob([], {{ type: "text/plain" }}));
+    }});
   </script>
 </body>
 </html>
@@ -799,8 +874,122 @@ def parse_curl_failure_reason(returncode: int, stdout: str, stderr: str) -> str:
     return "fail"
 
 
+def copy_image_to_clipboard(image_path: Path) -> None:
+    if platform.system() == "Darwin":
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                f'set the clipboard to (read (POSIX file "{image_path}") as «class PNGf»)',
+            ],
+            check=True,
+        )
+        return
+    raise RuntimeError("Image clipboard copy is not supported on this platform yet")
+
+
+class ReportRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, directory: str, **kwargs):
+        self._report_dir = Path(directory)
+        super().__init__(*args, directory=directory, **kwargs)
+
+    def log_message(self, format: str, *args) -> None:
+        return
+
+    def do_GET(self) -> None:
+        self.server.last_request_at = time.time()
+        super().do_GET()
+
+    def do_POST(self) -> None:
+        self.server.last_request_at = time.time()
+        parsed = urllib.parse.urlparse(self.path)
+        client_id = urllib.parse.parse_qs(parsed.query).get("id", [""])[0]
+        if parsed.path == "/_client_open":
+            if client_id:
+                self.server.active_clients.add(client_id)
+            self.send_response(204)
+            self.end_headers()
+            return
+        if parsed.path == "/_client_close":
+            if client_id:
+                self.server.active_clients.discard(client_id)
+                if not self.server.active_clients:
+                    self.server.shutdown_requested = True
+            self.send_response(204)
+            self.end_headers()
+            return
+        if parsed.path != "/_share_image":
+            self.send_error(404)
+            return
+        length = int(self.headers.get("Content-Length", "0"))
+        image_bytes = self.rfile.read(length)
+        image_path = self._report_dir / "shared-report.png"
+        image_path.write_bytes(image_bytes)
+        try:
+            copy_image_to_clipboard(image_path)
+        except Exception as exc:
+            body = str(exc).encode("utf-8", errors="replace")
+            self.send_response(500)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        self.send_response(204)
+        self.end_headers()
+
+
+class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+
+
+def get_report_launch_cmd(report_dir: Path, port_file: Path) -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "__serve-report", str(report_dir), str(port_file)]
+    return [sys.executable, str(Path(__file__).resolve()), "__serve-report", str(report_dir), str(port_file)]
+
+
+def run_report_server(report_dir: Path, port_file: Path) -> None:
+    handler = lambda *args, **kwargs: ReportRequestHandler(*args, directory=str(report_dir), **kwargs)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server.timeout = 1
+    server.last_request_at = time.time()
+    server.active_clients = set()
+    server.shutdown_requested = False
+    port_file.write_text(str(server.server_address[1]), encoding="utf-8")
+    try:
+        while time.time() - server.last_request_at < REPORT_SERVER_IDLE_TIMEOUT:
+            if server.shutdown_requested:
+                break
+            server.handle_request()
+    finally:
+        server.server_close()
+        port_file.unlink(missing_ok=True)
+
+
+def start_report_server(report_path: Path) -> str:
+    report_dir = report_path.parent
+    port_file = report_dir / "report-server.port"
+    port_file.unlink(missing_ok=True)
+    subprocess.Popen(
+        get_report_launch_cmd(report_dir, port_file),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    for _ in range(50):
+        if port_file.exists():
+            port = port_file.read_text(encoding="utf-8").strip()
+            if port:
+                return f"http://127.0.0.1:{port}/{urllib.parse.quote(report_path.name)}"
+        time.sleep(0.1)
+    raise RuntimeError("Report server did not start in time")
+
+
 def open_report(path: Path) -> bool:
-    return webbrowser.open(path.resolve().as_uri())
+    return webbrowser.open(start_report_server(path))
 
 
 def get_report_dir() -> Path:
@@ -879,6 +1068,10 @@ def run_uninstall() -> None:
 
 
 def main() -> None:
+    if len(sys.argv) == 4 and sys.argv[1] == "__serve-report":
+        run_report_server(Path(sys.argv[2]), Path(sys.argv[3]))
+        return
+
     args = parse_args()
     if args.command == "update":
         run_update()

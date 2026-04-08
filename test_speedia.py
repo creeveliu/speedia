@@ -186,20 +186,37 @@ class ReportTests(unittest.TestCase):
         self.assertIn("toggleSubUrl", html)
         self.assertIn("分享截图", html)
         self.assertIn("已隐藏", html)
+        self.assertIn("drawReportImage", html)
+        self.assertNotIn("foreignObject", html)
+        self.assertIn("/_client_open", html)
+        self.assertIn("/_client_close", html)
+        self.assertIn("sendBeacon", html)
 
     def test_open_report_uses_browser_with_file_uri(self) -> None:
         path = Path("/tmp/speed_results.html")
-        with patch("speedia.webbrowser.open", return_value=True) as mock_open:
-            result = speedia.open_report(path)
+        with patch("speedia.start_report_server", return_value="http://127.0.0.1:8765/speed_results.html"):
+            with patch("speedia.webbrowser.open", return_value=True) as mock_open:
+                result = speedia.open_report(path)
 
         self.assertEqual(result, True)
-        mock_open.assert_called_once_with(path.resolve().as_uri())
+        mock_open.assert_called_once()
+        self.assertIn("http://127.0.0.1:", mock_open.call_args.args[0])
 
     def test_get_report_dir_uses_system_temp_dir(self) -> None:
         with patch("speedia.tempfile.gettempdir", return_value="/tmp/test-root"):
             report_dir = speedia.get_report_dir()
 
         self.assertEqual(report_dir, Path("/tmp/test-root") / "speedia")
+
+    def test_copy_image_to_clipboard_uses_osascript_on_macos(self) -> None:
+        image_path = Path("/tmp/test.png")
+        with patch("speedia.platform.system", return_value="Darwin"):
+            with patch("speedia.subprocess.run") as mock_run:
+                speedia.copy_image_to_clipboard(image_path)
+
+        mock_run.assert_called_once()
+        self.assertIn("osascript", mock_run.call_args.args[0][0])
+        self.assertIn(str(image_path), " ".join(mock_run.call_args.args[0]))
 
 
 class CurlResultTests(unittest.TestCase):
