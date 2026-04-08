@@ -26,7 +26,7 @@ from requests.exceptions import RequestException
 DEFAULT_SECRET = "speedia"
 REPO_OWNER = "creeveliu"
 REPO_NAME = "speedia"
-DEFAULT_VERSION = "0.1.1"
+DEFAULT_VERSION = "0.1.2"
 GROUP = ""  # 留空会自动选节点最多的组
 LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
 
@@ -39,6 +39,10 @@ def get_managed_bin_dir() -> Path:
     return Path.home() / ".local" / "bin"
 
 
+def get_managed_install_root() -> Path:
+    return Path.home() / ".local" / "share" / "speedia"
+
+
 def get_managed_launcher_path() -> Path:
     return get_managed_bin_dir() / "speedia"
 
@@ -47,11 +51,11 @@ def get_release_asset_name() -> str:
     sys_name = platform.system().lower()
     machine = platform.machine().lower()
     if sys_name == "darwin" and machine in {"arm64", "aarch64"}:
-        return "speedia-darwin-arm64"
+        return "speedia-darwin-arm64.tar.gz"
     if sys_name == "darwin" and machine in {"x86_64", "amd64"}:
-        return "speedia-darwin-amd64"
+        return "speedia-darwin-amd64.tar.gz"
     if sys_name == "linux" and machine in {"x86_64", "amd64"}:
-        return "speedia-linux-amd64"
+        return "speedia-linux-amd64.tar.gz"
     raise RuntimeError(f"Unsupported install target: {sys_name}/{machine}")
 
 
@@ -681,20 +685,35 @@ def open_report(path: Path) -> bool:
     return webbrowser.open(path.resolve().as_uri())
 
 
-def install_binary_to(destination: Path) -> None:
+def get_managed_version_dir(version: str) -> Path:
+    return get_managed_install_root() / version
+
+
+def install_binary_to(destination: Path, version: str) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = destination.with_name(destination.name + ".tmp")
-    download(get_release_asset_url(), tmp_path)
-    tmp_path.chmod(0o755)
-    tmp_path.replace(destination)
+    install_root = get_managed_install_root()
+    version_dir = get_managed_version_dir(version)
+    tmp_archive = install_root / "speedia.tar.gz.tmp"
+    tmp_extract_dir = install_root / f".extract-{version}"
+    shutil.rmtree(tmp_extract_dir, ignore_errors=True)
+    version_dir.parent.mkdir(parents=True, exist_ok=True)
+    download(get_release_asset_url(), tmp_archive)
+    tmp_extract_dir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["tar", "-xzf", str(tmp_archive), "-C", str(tmp_extract_dir)], check=True)
+    extracted_entry = next(tmp_extract_dir.iterdir())
+    if version_dir.exists():
+        shutil.rmtree(version_dir)
+    extracted_entry.replace(version_dir)
+    tmp_archive.unlink(missing_ok=True)
+    shutil.rmtree(tmp_extract_dir, ignore_errors=True)
+    if destination.exists() or destination.is_symlink():
+        destination.unlink()
+    destination.symlink_to(version_dir / "speedia")
 
 
 def get_update_target_path() -> Path:
-    current_executable = Path(sys.executable).resolve()
-    managed_launcher = get_managed_launcher_path().resolve()
-    if current_executable == managed_launcher:
-        return managed_launcher
-    if managed_launcher.exists():
+    managed_launcher = get_managed_launcher_path()
+    if managed_launcher.exists() or managed_launcher.is_symlink():
         return managed_launcher
     raise RuntimeError("Managed install not found. Please install via install.sh first.")
 
@@ -713,7 +732,7 @@ def run_update() -> None:
         return
     print(f"[info] Updating speedia {current_version} -> {latest_version}")
     target = get_update_target_path()
-    install_binary_to(target)
+    install_binary_to(target, latest_version)
     print(f"[done] Updated speedia to {latest_version}")
 
 
@@ -722,9 +741,9 @@ def run_uninstall() -> None:
     launcher = get_managed_launcher_path()
     if launcher.exists() or launcher.is_symlink():
         launcher.unlink()
-    cache_dir = get_cache_dir()
-    if cache_dir.exists():
-        shutil.rmtree(cache_dir)
+    install_root = get_managed_install_root()
+    if install_root.exists():
+        shutil.rmtree(install_root)
     print("[done] Uninstalled speedia")
 
 

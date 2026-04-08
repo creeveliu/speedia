@@ -19,7 +19,7 @@ uv run speedia "<SUB_URL>"
 curl -fsSL https://raw.githubusercontent.com/creeveliu/speedia/main/install.sh | bash
 ```
 
-安装完成后可以直接使用：
+安装完成后会把程序放到 `~/.local/share/speedia/current/`，并创建 `~/.local/bin/speedia` 软链。随后可以直接使用：
 
 ```bash
 speedia "<SUB_URL>"

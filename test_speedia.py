@@ -137,12 +137,12 @@ class CliTests(unittest.TestCase):
     def test_get_release_asset_name_for_darwin_arm64(self) -> None:
         with patch("speedia.platform.system", return_value="Darwin"):
             with patch("speedia.platform.machine", return_value="arm64"):
-                self.assertEqual(speedia.get_release_asset_name(), "speedia-darwin-arm64")
+                self.assertEqual(speedia.get_release_asset_name(), "speedia-darwin-arm64.tar.gz")
 
     def test_get_release_asset_name_for_linux_amd64(self) -> None:
         with patch("speedia.platform.system", return_value="Linux"):
             with patch("speedia.platform.machine", return_value="x86_64"):
-                self.assertEqual(speedia.get_release_asset_name(), "speedia-linux-amd64")
+                self.assertEqual(speedia.get_release_asset_name(), "speedia-linux-amd64.tar.gz")
 
     def test_get_display_version_uses_embedded_or_default(self) -> None:
         with patch.dict("speedia.os.environ", {"SPEEDIA_VERSION": "1.2.3"}, clear=False):
