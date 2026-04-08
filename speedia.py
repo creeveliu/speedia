@@ -484,7 +484,7 @@ def build_generated_config_from_clash_yaml(config_text: str) -> str:
 def prepare_config_text(sub_url: str) -> tuple[str, str]:
     raw_text = fetch_url_bytes(sub_url).decode("utf-8", errors="replace")
     if "proxies:" in raw_text or "proxy-providers:" in raw_text:
-        return build_generated_config_from_clash_yaml(raw_text), "clash"
+        return patch_config(raw_text), "clash"
 
     decoded = maybe_decode_base64_text(raw_text)
     if decoded and "://" in decoded:

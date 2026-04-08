@@ -71,7 +71,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertIn(f"secret: {speedia.DEFAULT_SECRET}\n", patched)
 
-    def test_prepare_config_text_builds_minimal_config_from_clash_yaml(self) -> None:
+    def test_prepare_config_text_keeps_clash_yaml_structure(self) -> None:
         raw = """
 proxies:
   - name: Node A
@@ -89,10 +89,9 @@ rules:
 
         self.assertEqual(source_type, "clash")
         self.assertIn("name: Node A", config_text)
-        self.assertIn('secret: "speedia"', config_text)
+        self.assertIn("secret: speedia", config_text)
         self.assertIn('rules:', config_text)
-        self.assertIn('- "MATCH,Auto"', config_text)
-        self.assertNotIn("GEOIP,CN,DIRECT", config_text)
+        self.assertIn("GEOIP,CN,DIRECT", config_text)
 
     def test_parse_vless_preserves_tls_fingerprint_and_ech(self) -> None:
         uri = (
