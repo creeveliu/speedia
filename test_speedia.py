@@ -94,6 +94,24 @@ rules:
         self.assertIn('rules:', config_text)
         self.assertIn("GEOIP,CN,DIRECT", config_text)
 
+    def test_prepare_config_text_accepts_direct_base64_subscription_content(self) -> None:
+        raw = "dm1lc3M6Ly9leUpoWkdRaU9pSXhMakV1TVM0eElpd2ljRzl5ZENJNklqUTBNeUlzSW1sa0lqb2lkWFZwWkNJc0luQnpJam9pYm05a1pTSjk="
+
+        config_text, source_type = speedia.prepare_config_text(raw)
+
+        self.assertEqual(source_type, "shadowrocket")
+        self.assertIn('type: "vmess"', config_text)
+        self.assertIn('name: "node"', config_text)
+
+    def test_prepare_config_text_fetch_failure_suggests_pasting_subscription_content(self) -> None:
+        with patch("speedia.fetch_url_bytes", side_effect=RuntimeError("403 Forbidden")):
+            with patch.dict("speedia.os.environ", {"LANG": "zh_CN.UTF-8"}, clear=False):
+                with self.assertRaises(RuntimeError) as ctx:
+                    speedia.prepare_config_text("https://example.com/sub")
+
+        self.assertIn("订阅链接访问失败", str(ctx.exception))
+        self.assertIn("也可以直接传入订阅内容或 base64", str(ctx.exception))
+
     def test_parse_vless_preserves_tls_fingerprint_and_ech(self) -> None:
         uri = (
             "vless://uuid@example.com:443"

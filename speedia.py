@@ -6,6 +6,7 @@ import binascii
 import html
 import http.server
 import json
+import locale
 import os
 import platform
 import re
@@ -34,9 +35,20 @@ LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
 
 API = "http://127.0.0.1:19090"
 HTTP_PROXY = "http://127.0.0.1:17893"
-TEST_URL = "https://speed.cloudflare.com/__down?bytes=3000000"
-MAX_TIME = 8
+TEST_URL = "https://speed.cloudflare.com/__down?bytes=2000000"
+MAX_TIME = 16
 REPORT_SERVER_IDLE_TIMEOUT = 900
+
+I18N = {
+    "fetch_failed": {
+        "en": "Failed to fetch subscription URL. You can also pass the subscription content or base64 text directly. Details: {detail}",
+        "zh": "订阅链接访问失败。你也可以直接传入订阅内容或 base64 文本。详情：{detail}",
+    },
+    "unsupported_format": {
+        "en": "Unsupported subscription format: expected Clash/Mihomo YAML, URI subscription text, or base64 subscription content",
+        "zh": "不支持的订阅格式：需要 Clash/Mihomo YAML、URI 订阅文本，或 base64 订阅内容",
+    },
+}
 
 def get_managed_bin_dir() -> Path:
     return Path.home() / ".local" / "bin"
@@ -103,6 +115,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return args
 
 
+def get_language() -> str:
+    for key in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        value = os.environ.get(key)
+        if value:
+            lang = value.split(".", 1)[0].split("_", 1)[0].lower()
+            if lang in {"c", "posix"}:
+                continue
+            return "zh" if lang.startswith("zh") else "en"
+    loc = locale.getlocale(locale.LC_MESSAGES)[0] or locale.getdefaultlocale()[0]
+    if loc and loc.lower().startswith("zh"):
+        return "zh"
+    return "en"
+
+
+def tr(key: str, **kwargs: object) -> str:
+    lang = get_language()
+    template = I18N[key].get(lang, I18N[key]["en"])
+    return template.format(**kwargs)
+
+
 def download(url: str, out: Path) -> None:
     out.write_bytes(fetch_url_bytes(url))
 
@@ -125,6 +157,32 @@ def fetch_url_bytes(url: str) -> bytes:
             return cp.stdout
         curl_error = cp.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(f"Failed to fetch subscription. requests: {request_error}; curl: {curl_error}") from exc
+
+
+def looks_like_url(text: str) -> bool:
+    value = text.strip()
+    return value.startswith("http://") or value.startswith("https://")
+
+
+def prepare_config_text_from_raw(raw_text: str) -> tuple[str, str]:
+    if "proxies:" in raw_text or "proxy-providers:" in raw_text:
+        return patch_config(raw_text), "clash"
+
+    if "://" in raw_text:
+        proxies = parse_uri_subscription(raw_text)
+        if proxies:
+            return build_generated_config(proxies), "shadowrocket"
+
+    decoded = maybe_decode_base64_text(raw_text)
+    if decoded:
+        if "proxies:" in decoded or "proxy-providers:" in decoded:
+            return patch_config(decoded), "clash"
+        if "://" in decoded:
+            proxies = parse_uri_subscription(decoded)
+            if proxies:
+                return build_generated_config(proxies), "shadowrocket"
+
+    raise RuntimeError(tr("unsupported_format"))
 
 
 def get_cache_dir() -> Path:
@@ -545,18 +603,17 @@ def build_generated_config_from_clash_yaml(config_text: str) -> str:
     return "\n".join(config_lines) + "\n"
 
 
-def prepare_config_text(sub_url: str) -> tuple[str, str]:
-    raw_text = fetch_url_bytes(sub_url).decode("utf-8", errors="replace")
-    if "proxies:" in raw_text or "proxy-providers:" in raw_text:
-        return patch_config(raw_text), "clash"
-
-    decoded = maybe_decode_base64_text(raw_text)
-    if decoded and "://" in decoded:
-        proxies = parse_uri_subscription(decoded)
-        if proxies:
-            return build_generated_config(proxies), "shadowrocket"
-
-    raise RuntimeError("Unsupported subscription format: expected Clash/Mihomo YAML or Shadowrocket URI subscription")
+def prepare_config_text(target: str) -> tuple[str, str]:
+    if looks_like_url(target):
+        try:
+            raw_text = fetch_url_bytes(target).decode("utf-8", errors="replace")
+        except RuntimeError as exc:
+            raise RuntimeError(tr("fetch_failed", detail=str(exc))) from exc
+        try:
+            return prepare_config_text_from_raw(raw_text)
+        except RuntimeError as exc:
+            raise RuntimeError(f"{exc}. {tr('fetch_failed', detail='')}") from exc
+    return prepare_config_text_from_raw(target)
 
 
 def pick_group(proxies: dict) -> tuple[str, list[str]]:

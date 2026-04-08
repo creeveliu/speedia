@@ -21,7 +21,8 @@ speedia update
 speedia uninstall
 ```
 
-`<SUB_URL>` 是必填的订阅地址。
+`<SUB_URL>` 是必填输入。
+可以传订阅地址，也可以直接传原始订阅内容或 base64 文本。
 支持原生 Clash/Mihomo YAML 订阅，也支持常见的 Shadowrocket URI 订阅自动转换后测速。
 
 ## 支持平台
@@ -94,7 +95,7 @@ uv run speedia "<SUB_URL>"
 
 `speedia` 会做这些事：
 
-1. 下载你传入的订阅配置 URL，并自动识别原生 Clash/Mihomo YAML 或 Shadowrocket URI 订阅格式。
+1. 如果你传的是订阅 URL，就先下载；如果你直接传订阅内容或 base64 文本，就直接解析。随后自动识别原生 Clash/Mihomo YAML 或 Shadowrocket URI 订阅格式。
 2. 自动把端口改到独立端口，避免影响现有代理：
    - `port: 17890`
    - `socks-port: 17891`
@@ -119,6 +120,11 @@ uv run speedia "<SUB_URL>"
 - `LIMIT`：本轮最多测速节点数
 - `TEST_URL`：测速下载地址
 - `MAX_TIME`：单节点测速超时（秒）
+
+当前默认值：
+
+- `TEST_URL = https://speed.cloudflare.com/__down?bytes=2000000`
+- `MAX_TIME = 16`
 
 ## 结果格式
 
