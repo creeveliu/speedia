@@ -26,6 +26,7 @@ from requests.exceptions import RequestException
 DEFAULT_SECRET = "speedia"
 REPO_OWNER = "creeveliu"
 REPO_NAME = "speedia"
+DEFAULT_VERSION = "0.1.0"
 GROUP = ""  # 留空会自动选节点最多的组
 LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
 
@@ -58,8 +59,21 @@ def get_release_asset_url() -> str:
     return f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/latest/download/{get_release_asset_name()}"
 
 
+def get_latest_release_api_url() -> str:
+    return f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
+
+
+def get_display_version() -> str:
+    return os.environ.get("SPEEDIA_VERSION", DEFAULT_VERSION)
+
+
+def parse_latest_version_tag(tag: str) -> str:
+    return tag[1:] if tag.startswith("v") else tag
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Batch speed test for Clash/Mihomo subscriptions")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {get_display_version()}")
     parser.add_argument("target", help="Subscription URL to test, or update/uninstall")
     args = parser.parse_args(argv)
     if args.target in {"update", "uninstall"}:
@@ -685,11 +699,22 @@ def get_update_target_path() -> Path:
     raise RuntimeError("Managed install not found. Please install via install.sh first.")
 
 
+def get_latest_release_version() -> str:
+    response = requests.get(get_latest_release_api_url(), timeout=10)
+    response.raise_for_status()
+    return parse_latest_version_tag(response.json()["tag_name"])
+
+
 def run_update() -> None:
-    print("[info] Updating speedia")
+    current_version = get_display_version()
+    latest_version = get_latest_release_version()
+    if latest_version == current_version:
+        print(f"[done] speedia is already up to date ({current_version})")
+        return
+    print(f"[info] Updating speedia {current_version} -> {latest_version}")
     target = get_update_target_path()
     install_binary_to(target)
-    print("[done] Updated speedia")
+    print(f"[done] Updated speedia to {latest_version}")
 
 
 def run_uninstall() -> None:

@@ -1,4 +1,4 @@
-# Trivial Speedtest
+# Speedia
 
 批量测速 Clash/Mihomo 订阅节点的脚本，命令入口是 `speedia`。
 

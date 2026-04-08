@@ -144,6 +144,13 @@ class CliTests(unittest.TestCase):
             with patch("speedia.platform.machine", return_value="x86_64"):
                 self.assertEqual(speedia.get_release_asset_name(), "speedia-linux-amd64")
 
+    def test_get_display_version_uses_embedded_or_default(self) -> None:
+        with patch.dict("speedia.os.environ", {"SPEEDIA_VERSION": "1.2.3"}, clear=False):
+            self.assertEqual(speedia.get_display_version(), "1.2.3")
+
+    def test_parse_latest_version_tag(self) -> None:
+        self.assertEqual(speedia.parse_latest_version_tag("v1.2.3"), "1.2.3")
+
 
 class ReportTests(unittest.TestCase):
     def test_html_report_hides_group_from_meta(self) -> None:
