@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 import argparse
+import ast
 import base64
 import binascii
 import html
 import json
 import os
 import platform
+import re
 import subprocess
 import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
 from pathlib import Path
 
 import requests
@@ -24,7 +27,7 @@ LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
 API = "http://127.0.0.1:19090"
 HTTP_PROXY = "http://127.0.0.1:17893"
 TEST_URL = "https://speed.cloudflare.com/__down?bytes=3000000"
-MAX_TIME = 3
+MAX_TIME = 8
 
 
 def parse_args() -> argparse.Namespace:
@@ -157,6 +160,58 @@ def patch_config(config_text: str) -> str:
     return "\n".join(out) + "\n"
 
 
+def decode_yaml_scalar(text: str) -> str:
+    value = text.strip()
+    if not value:
+        return value
+    if value[0] in ('"', "'") and value[-1:] == value[0]:
+        try:
+            return ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            return value[1:-1]
+    return value
+
+
+def extract_clash_proxies_block(config_text: str) -> tuple[list[str], list[str]]:
+    lines = config_text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if line.strip() == "proxies:" and line == line.lstrip():
+            start = i
+            break
+    if start is None:
+        raise RuntimeError("Subscription does not contain a top-level proxies section")
+
+    block = ["proxies:"]
+    names = []
+    current_item_started = False
+    for line in lines[start + 1 :]:
+        if line and line == line.lstrip():
+            break
+        if not line.strip():
+            block.append(line)
+            continue
+        block.append(line)
+
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            current_item_started = True
+            remainder = stripped[2:].strip()
+            if remainder.startswith("name:"):
+                names.append(decode_yaml_scalar(remainder.split(":", 1)[1]))
+            else:
+                match = re.search(r"(?:^|[,{]\s*)name:\s*([^,}]+)", remainder)
+                if match:
+                    names.append(decode_yaml_scalar(match.group(1)))
+        elif current_item_started and stripped.startswith("name:"):
+            names.append(decode_yaml_scalar(stripped.split(":", 1)[1]))
+
+    deduped_names = [name for i, name in enumerate(names) if name and name not in names[:i]]
+    if not deduped_names:
+        raise RuntimeError("No proxy names found in Clash subscription")
+    return block, deduped_names
+
+
 def maybe_decode_base64_text(text: str) -> str | None:
     stripped = "".join(text.split())
     if not stripped:
@@ -265,6 +320,22 @@ def parse_vless_or_trojan_uri(uri: str, proxy_type: str) -> dict:
         proxy["servername"] = servername
     if query.get("security", [""])[0] == "tls" or servername:
         proxy["tls"] = True
+    if query.get("allowInsecure", [""])[0] == "1" or query.get("insecure", [""])[0] == "1":
+        proxy["skip-cert-verify"] = True
+    fingerprint = query.get("fp", [""])[0]
+    if fingerprint:
+        proxy["client-fingerprint"] = fingerprint
+    alpn = [value for value in query.get("alpn", [""])[0].split(",") if value]
+    if alpn:
+        proxy["alpn"] = alpn
+    ech = query.get("ech", [""])[0]
+    if ech:
+        server_name, _, config = ech.partition("+")
+        proxy["ech-opts"] = {"enable": True}
+        if server_name:
+            proxy["ech-opts"]["query-server-name"] = server_name
+        if config and "://" not in config:
+            proxy["ech-opts"]["config"] = config
     path = query.get("path", [""])[0]
     host = query.get("host", [""])[0]
     if network == "ws":
@@ -386,10 +457,34 @@ def build_generated_config(proxies: list[dict]) -> str:
     return "\n".join(yaml_lines(config)) + "\n"
 
 
+def build_generated_config_from_clash_yaml(config_text: str) -> str:
+    proxies_block, names = extract_clash_proxies_block(config_text)
+    config_lines = [
+        f'port: 17890',
+        f'socks-port: 17891',
+        f'redir-port: 0',
+        f'mixed-port: 17893',
+        f'allow-lan: false',
+        f'external-controller: "127.0.0.1:19090"',
+        f'secret: "{DEFAULT_SECRET}"',
+        f'mode: "rule"',
+        *proxies_block,
+        "proxy-groups:",
+        "  -",
+        '    name: "Auto"',
+        '    type: "select"',
+        "    proxies:",
+        *[f"      - {yaml_scalar(name)}" for name in names],
+        "rules:",
+        '  - "MATCH,Auto"',
+    ]
+    return "\n".join(config_lines) + "\n"
+
+
 def prepare_config_text(sub_url: str) -> tuple[str, str]:
     raw_text = fetch_url_bytes(sub_url).decode("utf-8", errors="replace")
     if "proxies:" in raw_text or "proxy-providers:" in raw_text:
-        return patch_config(raw_text), "clash"
+        return build_generated_config_from_clash_yaml(raw_text), "clash"
 
     decoded = maybe_decode_base64_text(raw_text)
     if decoded and "://" in decoded:
@@ -521,21 +616,34 @@ def render_html_report(group: str, tested_at: str, results: list[dict]) -> str:
 """
 
 
+def parse_curl_failure_reason(returncode: int, stdout: str, stderr: str) -> str:
+    code = stdout.strip()
+    error_text = stderr.lower()
+    if returncode == 28 or "timed out" in error_text:
+        return "timeout"
+    if returncode == 35 or "ssl_connect" in error_text or "tls" in error_text:
+        return "tls_error"
+    if code.isdigit() and code != "000":
+        return f"http_{code}"
+    if returncode:
+        return f"curl_{returncode}"
+    return "fail"
+
+
+def open_report(path: Path) -> bool:
+    return webbrowser.open(path.resolve().as_uri())
+
+
 def main() -> None:
     args = parse_args()
     sub_url = args.sub_url
     workdir = Path(tempfile.mkdtemp(prefix="mihomo-speedtest-"))
     cfg_path = workdir / "config.yaml"
-    geoip_path = workdir / "geoip.metadb"
     print(f"[info] Workdir: {workdir}")
 
     config_text, source_type = prepare_config_text(sub_url)
     cfg_path.write_text(config_text, encoding="utf-8")
     print(f"[info] Subscription type: {source_type}")
-
-    print("[info] Preparing geoip database")
-    cached_geoip = get_geoip_db()
-    geoip_path.write_bytes(cached_geoip.read_bytes())
 
     mihomo_bin = get_mihomo_bin()
     mihomo_stderr_path = workdir / "mihomo.stderr.log"
@@ -565,7 +673,7 @@ def main() -> None:
         proxies = requests.get(f"{API}/proxies", headers=headers, timeout=10).json()["proxies"]
         group, nodes = pick_group(proxies)
         nodes = nodes[:LIMIT]
-        print(f"[info] Group: {group}, testing {len(nodes)} nodes")
+        print(f"[info] Testing {len(nodes)} nodes")
 
         results = []
         for i, node in enumerate(nodes, 1):
@@ -583,7 +691,7 @@ def main() -> None:
                 "/dev/null",
                 "-s",
                 "-w",
-                "%{speed_download}",
+                "%{http_code} %{speed_download}",
                 "--proxy",
                 HTTP_PROXY,
                 "--max-time",
@@ -592,17 +700,21 @@ def main() -> None:
             ]
             try:
                 cp = subprocess.run(cmd, capture_output=True, text=True, timeout=MAX_TIME + 2)
-                if cp.returncode == 0 and cp.stdout.strip():
-                    bps = float(cp.stdout.strip())
+                parts = cp.stdout.strip().split()
+                http_code = parts[0] if parts else "000"
+                speed_text = parts[1] if len(parts) > 1 else ""
+                if cp.returncode == 0 and speed_text and http_code.startswith(("2", "3")):
+                    bps = float(speed_text)
                     mbps = round(bps * 8 / 1_000_000, 2)
                     results.append({"node": node, "mbps": mbps, "status": "ok"})
                     print(f"[{i}/{len(nodes)}] {node}  {mbps:.2f} Mbps")
                 else:
-                    results.append({"node": node, "mbps": None, "status": "fail"})
-                    print(f"[{i}/{len(nodes)}] {node}  FAIL")
+                    reason = parse_curl_failure_reason(cp.returncode, http_code, cp.stderr)
+                    results.append({"node": node, "mbps": None, "status": "fail", "reason": reason})
+                    print(f"[{i}/{len(nodes)}] {node}  FAIL {reason}")
             except Exception:
-                results.append({"node": node, "mbps": None, "status": "fail"})
-                print(f"[{i}/{len(nodes)}] {node}  FAIL")
+                results.append({"node": node, "mbps": None, "status": "fail", "reason": "exception"})
+                print(f"[{i}/{len(nodes)}] {node}  FAIL exception")
 
         tested_at = time.strftime("%Y-%m-%d %H:%M:%S")
         out = {
@@ -618,6 +730,8 @@ def main() -> None:
         html_path.write_text(render_html_report(group, tested_at, results), encoding="utf-8")
         print(f"[done] Saved: {out_path}")
         print(f"[done] Saved: {html_path}")
+        if open_report(html_path):
+            print(f"[done] Opened: {html_path}")
     finally:
         mihomo_stderr.close()
         try:

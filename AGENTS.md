@@ -12,7 +12,8 @@
 - 脚本依赖 `curl`、`gunzip`（系统命令）和 Python `requests`。
 - 不依赖本机常驻 Clash；脚本会自己起临时 Mihomo。
 - 端口固定为隔离端口（`17890/17891/17893/19090`）。
-- 输出文件固定为 `speed_results.json`（当前工作目录）。
+- 输出文件固定为 `speed_results.json` 和 `speed_results.html`（当前工作目录）。
+- 运行时会把订阅转换为最小测速配置，不依赖原订阅的规则和 `geoip.metadb`。
 
 ## 建议的下一步改造
 
@@ -25,7 +26,8 @@
 ## 验证命令
 
 ```bash
-cd /Users/cl/Projects/Trivial
-python3 -m py_compile speedia.py
+cd /Users/cl/Projects/speedia
+python3 -m py_compile speedia.py test_speedia.py
+python3 -m unittest -v test_speedia.py
 uv run speedia "<SUB_URL>"
 ```

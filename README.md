@@ -16,7 +16,7 @@ uv run speedia "<SUB_URL>"
 运行完成后会生成：
 
 - `speed_results.json`（完整测速结果，保持订阅原始顺序）
-- `speed_results.html`（本地网页汇总，方便完整查看结果）
+- `speed_results.html`（本地网页汇总，方便完整查看结果，生成后会自动打开）
 
 ## 当前实现
 
@@ -29,13 +29,13 @@ uv run speedia "<SUB_URL>"
    - `mixed-port: 17893`
    - `redir-port: 0`
    - `external-controller: 127.0.0.1:19090`
-3. 下载 `geoip.metadb` 到临时目录，避免启动时卡住。
+3. 将订阅转换为只用于测速的最小 Mihomo 配置，只保留节点、单个 `select` 组和 `MATCH,Auto` 规则。
 4. 优先使用系统 `mihomo`；没有则自动下载 `v1.19.23` 对应平台二进制到 `~/.cache/speedia/mihomo`，后续直接复用。
 5. 启动临时 Mihomo 实例，调用 REST API：
    - 获取 `proxies`
-   - 选策略组（`GROUP` 为空时自动选节点最多的组）
-   - 按节点切换策略组并用 `curl` 测 `speed_download`
-6. 在终端按完成顺序逐行输出节点测速结果，并写入 `speed_results.json` 和 `speed_results.html`。
+   - 在内部选择可测速的组并切换节点
+   - 用 `curl` 测 `speed_download`
+6. 在终端按完成顺序逐行输出节点测速结果；失败时会带原因（如 `timeout`、`tls_error`、`http_502`），并写入 `speed_results.json` 和 `speed_results.html`。
 7. 结束后自动关闭临时 Mihomo 进程。
 
 ## 可配置项（在 `speedia.py` 顶部）
@@ -52,12 +52,12 @@ uv run speedia "<SUB_URL>"
 
 ```json
 {
-  "group": "🤖 OpenAi",
+  "group": "GLOBAL",
   "tested_count": 50,
   "tested_at": "2026-04-08 12:00:00",
   "results": [
     { "node": "节点A", "mbps": 11.63, "status": "ok" },
-    { "node": "节点B", "mbps": null, "status": "fail" }
+    { "node": "节点B", "mbps": null, "status": "fail", "reason": "timeout" }
   ]
 }
 ```
