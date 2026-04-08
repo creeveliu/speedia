@@ -2,18 +2,9 @@
 
 批量测速 Clash/Mihomo 订阅节点的脚本，命令入口是 `speedia`。
 
-## 快速开始
-
-```bash
-cd /Users/cl/Projects/speedia
-uv sync
-uv run speedia "<SUB_URL>"
-```
-
-`<SUB_URL>` 是必填的订阅地址。
-支持原生 Clash/Mihomo YAML 订阅，也支持常见的 Shadowrocket URI 订阅自动转换后测速。
-
 ## 一键安装
+
+推荐直接用一键脚本安装：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/creeveliu/speedia/main/install.sh | bash
@@ -25,6 +16,17 @@ curl -fsSL https://raw.githubusercontent.com/creeveliu/speedia/main/install.sh |
 speedia "<SUB_URL>"
 speedia update
 speedia uninstall
+```
+
+`<SUB_URL>` 是必填的订阅地址。
+支持原生 Clash/Mihomo YAML 订阅，也支持常见的 Shadowrocket URI 订阅自动转换后测速。
+
+## 开发调试
+
+```bash
+cd /Users/cl/Projects/speedia
+uv sync
+uv run speedia "<SUB_URL>"
 ```
 
 运行完成后会生成：
