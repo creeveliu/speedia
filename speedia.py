@@ -67,12 +67,23 @@ def get_latest_release_api_url() -> str:
     return f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
 
 
+def get_latest_release_page_url() -> str:
+    return f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/latest"
+
+
 def get_display_version() -> str:
     return os.environ.get("SPEEDIA_VERSION", DEFAULT_VERSION)
 
 
 def parse_latest_version_tag(tag: str) -> str:
     return tag[1:] if tag.startswith("v") else tag
+
+
+def parse_release_version_from_url(url: str) -> str | None:
+    match = re.search(r"/releases/tag/([^/?#]+)", url)
+    if not match:
+        return None
+    return parse_latest_version_tag(match.group(1))
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -719,6 +730,15 @@ def get_update_target_path() -> Path:
 
 
 def get_latest_release_version() -> str:
+    try:
+        response = requests.get(get_latest_release_page_url(), timeout=10, allow_redirects=True)
+        response.raise_for_status()
+        version = parse_release_version_from_url(response.url)
+        if version:
+            return version
+    except RequestException:
+        pass
+
     response = requests.get(get_latest_release_api_url(), timeout=10)
     response.raise_for_status()
     return parse_latest_version_tag(response.json()["tag_name"])

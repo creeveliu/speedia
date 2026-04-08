@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import speedia
@@ -150,6 +151,21 @@ class CliTests(unittest.TestCase):
 
     def test_parse_latest_version_tag(self) -> None:
         self.assertEqual(speedia.parse_latest_version_tag("v1.2.3"), "1.2.3")
+
+    def test_parse_release_version_from_url(self) -> None:
+        url = "https://github.com/creeveliu/speedia/releases/tag/v1.2.3"
+        self.assertEqual(speedia.parse_release_version_from_url(url), "1.2.3")
+
+    def test_get_latest_release_version_prefers_release_page_redirect(self) -> None:
+        with patch(
+            "speedia.requests.get",
+            return_value=SimpleNamespace(
+                url="https://github.com/creeveliu/speedia/releases/tag/v1.2.3",
+                raise_for_status=lambda: None,
+            ),
+        ) as mock_get:
+            self.assertEqual(speedia.get_latest_release_version(), "1.2.3")
+        self.assertEqual(mock_get.call_count, 1)
 
 
 class ReportTests(unittest.TestCase):
