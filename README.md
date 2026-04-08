@@ -2,6 +2,9 @@
 
 批量测试订阅节点速度的脚本。
 
+<img width="2186" height="1582" alt="image" src="https://github.com/user-attachments/assets/cd20134e-59ae-4b78-bd8b-19cbf97408c5" />
+
+
 ## 一键安装
 
 推荐直接用一键脚本安装（请保证网络畅通，githubusercontent对网络要求较高）：
