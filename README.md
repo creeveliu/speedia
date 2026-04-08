@@ -21,6 +21,40 @@ speedia uninstall
 `<SUB_URL>` 是必填的订阅地址。
 支持原生 Clash/Mihomo YAML 订阅，也支持常见的 Shadowrocket URI 订阅自动转换后测速。
 
+## 命令说明
+
+### `speedia "<SUB_URL>"`
+
+执行测速。
+
+```bash
+speedia "https://example.com/sub"
+```
+
+### `speedia update`
+
+更新到最新 release 版本。
+
+```bash
+speedia update
+```
+
+### `speedia uninstall`
+
+卸载 `speedia`，并删除安装目录和启动软链。
+
+```bash
+speedia uninstall
+```
+
+### `speedia --version`
+
+查看当前安装版本。
+
+```bash
+speedia --version
+```
+
 ## 开发调试
 
 ```bash
