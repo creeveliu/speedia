@@ -8,7 +8,9 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -16,11 +18,14 @@ import urllib.parse
 import urllib.request
 import webbrowser
 from pathlib import Path
+from typing import Sequence
 
 import requests
 from requests.exceptions import RequestException
 
 DEFAULT_SECRET = "speedia"
+REPO_OWNER = "creeveliu"
+REPO_NAME = "speedia"
 GROUP = ""  # 留空会自动选节点最多的组
 LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
 
@@ -29,14 +34,41 @@ HTTP_PROXY = "http://127.0.0.1:17893"
 TEST_URL = "https://speed.cloudflare.com/__down?bytes=3000000"
 MAX_TIME = 8
 
+def get_managed_bin_dir() -> Path:
+    return Path.home() / ".local" / "bin"
 
-def parse_args() -> argparse.Namespace:
+
+def get_managed_launcher_path() -> Path:
+    return get_managed_bin_dir() / "speedia"
+
+
+def get_release_asset_name() -> str:
+    sys_name = platform.system().lower()
+    machine = platform.machine().lower()
+    if sys_name == "darwin" and machine in {"arm64", "aarch64"}:
+        return "speedia-darwin-arm64"
+    if sys_name == "darwin" and machine in {"x86_64", "amd64"}:
+        return "speedia-darwin-amd64"
+    if sys_name == "linux" and machine in {"x86_64", "amd64"}:
+        return "speedia-linux-amd64"
+    raise RuntimeError(f"Unsupported install target: {sys_name}/{machine}")
+
+
+def get_release_asset_url() -> str:
+    return f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/latest/download/{get_release_asset_name()}"
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Batch speed test for Clash/Mihomo subscriptions")
-    parser.add_argument(
-        "sub_url",
-        help="Subscription URL to test",
-    )
-    return parser.parse_args()
+    parser.add_argument("target", help="Subscription URL to test, or update/uninstall")
+    args = parser.parse_args(argv)
+    if args.target in {"update", "uninstall"}:
+        args.command = args.target
+        args.sub_url = None
+    else:
+        args.command = "test"
+        args.sub_url = args.target
+    return args
 
 
 def download(url: str, out: Path) -> None:
@@ -635,8 +667,51 @@ def open_report(path: Path) -> bool:
     return webbrowser.open(path.resolve().as_uri())
 
 
+def install_binary_to(destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = destination.with_name(destination.name + ".tmp")
+    download(get_release_asset_url(), tmp_path)
+    tmp_path.chmod(0o755)
+    tmp_path.replace(destination)
+
+
+def get_update_target_path() -> Path:
+    current_executable = Path(sys.executable).resolve()
+    managed_launcher = get_managed_launcher_path().resolve()
+    if current_executable == managed_launcher:
+        return managed_launcher
+    if managed_launcher.exists():
+        return managed_launcher
+    raise RuntimeError("Managed install not found. Please install via install.sh first.")
+
+
+def run_update() -> None:
+    print("[info] Updating speedia")
+    target = get_update_target_path()
+    install_binary_to(target)
+    print("[done] Updated speedia")
+
+
+def run_uninstall() -> None:
+    print("[info] Uninstalling speedia")
+    launcher = get_managed_launcher_path()
+    if launcher.exists() or launcher.is_symlink():
+        launcher.unlink()
+    cache_dir = get_cache_dir()
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
+    print("[done] Uninstalled speedia")
+
+
 def main() -> None:
     args = parse_args()
+    if args.command == "update":
+        run_update()
+        return
+    if args.command == "uninstall":
+        run_uninstall()
+        return
+
     sub_url = args.sub_url
     workdir = Path(tempfile.mkdtemp(prefix="mihomo-speedtest-"))
     cfg_path = workdir / "config.yaml"

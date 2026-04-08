@@ -118,6 +118,33 @@ rules:
         self.assertEqual(proxy["skip-cert-verify"], True)
 
 
+class CliTests(unittest.TestCase):
+    def test_parse_args_defaults_to_speedtest_url(self) -> None:
+        args = speedia.parse_args(["https://example.com/sub"])
+        self.assertEqual(args.command, "test")
+        self.assertEqual(args.sub_url, "https://example.com/sub")
+
+    def test_parse_args_supports_update(self) -> None:
+        args = speedia.parse_args(["update"])
+        self.assertEqual(args.command, "update")
+        self.assertIsNone(args.sub_url)
+
+    def test_parse_args_supports_uninstall(self) -> None:
+        args = speedia.parse_args(["uninstall"])
+        self.assertEqual(args.command, "uninstall")
+        self.assertIsNone(args.sub_url)
+
+    def test_get_release_asset_name_for_darwin_arm64(self) -> None:
+        with patch("speedia.platform.system", return_value="Darwin"):
+            with patch("speedia.platform.machine", return_value="arm64"):
+                self.assertEqual(speedia.get_release_asset_name(), "speedia-darwin-arm64")
+
+    def test_get_release_asset_name_for_linux_amd64(self) -> None:
+        with patch("speedia.platform.system", return_value="Linux"):
+            with patch("speedia.platform.machine", return_value="x86_64"):
+                self.assertEqual(speedia.get_release_asset_name(), "speedia-linux-amd64")
+
+
 class ReportTests(unittest.TestCase):
     def test_html_report_hides_group_from_meta(self) -> None:
         html = speedia.render_html_report(

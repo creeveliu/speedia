@@ -13,6 +13,20 @@ uv run speedia "<SUB_URL>"
 `<SUB_URL>` 是必填的订阅地址。
 支持原生 Clash/Mihomo YAML 订阅，也支持常见的 Shadowrocket URI 订阅自动转换后测速。
 
+## 一键安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/creeveliu/speedia/main/install.sh | bash
+```
+
+安装完成后可以直接使用：
+
+```bash
+speedia "<SUB_URL>"
+speedia update
+speedia uninstall
+```
+
 运行完成后会生成：
 
 - `speed_results.json`（完整测速结果，保持订阅原始顺序）
@@ -29,7 +43,9 @@ uv run speedia "<SUB_URL>"
    - `mixed-port: 17893`
    - `redir-port: 0`
    - `external-controller: 127.0.0.1:19090`
-3. 将订阅转换为只用于测速的最小 Mihomo 配置，只保留节点、单个 `select` 组和 `MATCH,Auto` 规则。
+3. 对订阅做测速专用处理：
+   - 原生 Clash/Mihomo YAML：保留原配置结构，只注入隔离端口和本地 API 密钥
+   - Shadowrocket URI：转换为只用于测速的最小 Mihomo 配置
 4. 优先使用系统 `mihomo`；没有则自动下载 `v1.19.23` 对应平台二进制到 `~/.cache/speedia/mihomo`，后续直接复用。
 5. 启动临时 Mihomo 实例，调用 REST API：
    - 获取 `proxies`
