@@ -28,7 +28,7 @@ from requests.exceptions import RequestException
 DEFAULT_SECRET = "speedia"
 REPO_OWNER = "creeveliu"
 REPO_NAME = "speedia"
-DEFAULT_VERSION = "0.1.5"
+DEFAULT_VERSION = "0.1.6"
 GROUP = ""  # 留空会自动选节点最多的组
 LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
 
@@ -988,8 +988,9 @@ def start_report_server(report_path: Path) -> str:
     raise RuntimeError("Report server did not start in time")
 
 
-def open_report(path: Path) -> bool:
-    return webbrowser.open(start_report_server(path))
+def open_report(path: Path) -> tuple[bool, str]:
+    url = start_report_server(path)
+    return webbrowser.open(url), url
 
 
 def get_report_dir() -> Path:
@@ -1176,8 +1177,10 @@ def main() -> None:
         html_path.write_text(render_html_report(group, tested_at, sub_url, results), encoding="utf-8")
         print(f"[done] Saved: {out_path}")
         print(f"[done] Saved: {html_path}")
-        if open_report(html_path):
-            print(f"[done] Opened: {html_path}")
+        opened, report_url = open_report(html_path)
+        if opened:
+            print(f"[done] Opened: {report_url}")
+            print("[info] Close the page when you're done. The local report server will stop automatically.")
     finally:
         mihomo_stderr.close()
         try:

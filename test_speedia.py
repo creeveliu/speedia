@@ -196,9 +196,10 @@ class ReportTests(unittest.TestCase):
         path = Path("/tmp/speed_results.html")
         with patch("speedia.start_report_server", return_value="http://127.0.0.1:8765/speed_results.html"):
             with patch("speedia.webbrowser.open", return_value=True) as mock_open:
-                result = speedia.open_report(path)
+                opened, url = speedia.open_report(path)
 
-        self.assertEqual(result, True)
+        self.assertEqual(opened, True)
+        self.assertEqual(url, "http://127.0.0.1:8765/speed_results.html")
         mock_open.assert_called_once()
         self.assertIn("http://127.0.0.1:", mock_open.call_args.args[0])
 
