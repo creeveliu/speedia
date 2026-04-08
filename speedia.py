@@ -26,7 +26,7 @@ from requests.exceptions import RequestException
 DEFAULT_SECRET = "speedia"
 REPO_OWNER = "creeveliu"
 REPO_NAME = "speedia"
-DEFAULT_VERSION = "0.1.3"
+DEFAULT_VERSION = "0.1.4"
 GROUP = ""  # 留空会自动选节点最多的组
 LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
 
@@ -580,6 +580,7 @@ def pick_group(proxies: dict) -> tuple[str, list[str]]:
 
 
 def render_html_report(group: str, tested_at: str, subscription_url: str, results: list[dict]) -> str:
+    masked_subscription_url = mask_subscription_url(subscription_url)
     rows = []
     for index, item in enumerate(results, 1):
         status = "成功" if item["status"] == "ok" else "失败"
@@ -619,6 +620,33 @@ def render_html_report(group: str, tested_at: str, subscription_url: str, result
       margin: 0 0 20px;
       color: #5b6878;
     }}
+    .meta-row {{
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }}
+    .toolbar {{
+      display: flex;
+      gap: 10px;
+      margin: 0 0 20px;
+    }}
+    .btn {{
+      border: 1px solid #c9d6e4;
+      background: #fff;
+      color: #314255;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font: inherit;
+      cursor: pointer;
+    }}
+    .btn:hover {{
+      background: #f8fbff;
+    }}
+    .sub-url {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      word-break: break-all;
+    }}
     .card {{
       overflow: hidden;
       border: 1px solid #dce5ef;
@@ -656,7 +684,15 @@ def render_html_report(group: str, tested_at: str, subscription_url: str, result
   <div class="wrap">
     <h1>Speedia 测速结果</h1>
     <p class="meta">测试时间：{html.escape(tested_at)} · 节点数：{len(results)}</p>
-    <p class="meta">订阅链接：{html.escape(subscription_url)}</p>
+    <div class="toolbar">
+      <button class="btn" type="button" onclick="toggleSubUrl()" id="toggle-sub-url">👁 显示订阅链接</button>
+      <button class="btn" type="button" onclick="shareScreenshot()" id="share-screenshot">📸 分享截图</button>
+    </div>
+    <div class="meta meta-row">
+      <span>订阅链接：</span>
+      <span class="sub-url" id="sub-url" data-masked="{html.escape(masked_subscription_url)}" data-full="{html.escape(subscription_url)}">{html.escape(masked_subscription_url)}</span>
+      <span id="sub-url-state">已隐藏</span>
+    </div>
     <div class="card">
       <table>
         <thead>
@@ -673,9 +709,80 @@ def render_html_report(group: str, tested_at: str, subscription_url: str, result
       </table>
     </div>
   </div>
+  <script>
+    let subUrlVisible = false;
+
+    function toggleSubUrl() {{
+      const subUrl = document.getElementById("sub-url");
+      const button = document.getElementById("toggle-sub-url");
+      const state = document.getElementById("sub-url-state");
+      subUrlVisible = !subUrlVisible;
+      subUrl.textContent = subUrlVisible ? subUrl.dataset.full : subUrl.dataset.masked;
+      button.textContent = subUrlVisible ? "🙈 隐藏订阅链接" : "👁 显示订阅链接";
+      state.textContent = subUrlVisible ? "已显示" : "已隐藏";
+    }}
+
+    async function shareScreenshot() {{
+      const button = document.getElementById("share-screenshot");
+      const wrap = document.querySelector(".wrap");
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = "生成中...";
+      try {{
+        const width = Math.ceil(wrap.scrollWidth);
+        const height = Math.ceil(wrap.scrollHeight);
+        const styleText = Array.from(document.querySelectorAll("style")).map((node) => node.textContent).join("\\n");
+        const markup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="${{width}}" height="${{height}}">
+            <foreignObject width="100%" height="100%">
+              <div xmlns="http://www.w3.org/1999/xhtml">
+                <style>${{styleText}}</style>
+                ${{wrap.outerHTML}}
+              </div>
+            </foreignObject>
+          </svg>
+        `;
+        const blob = new Blob([markup], {{ type: "image/svg+xml;charset=utf-8" }});
+        const url = URL.createObjectURL(blob);
+        const image = new Image();
+        image.src = url;
+        await new Promise((resolve, reject) => {{
+          image.onload = resolve;
+          image.onerror = reject;
+        }});
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0);
+        URL.revokeObjectURL(url);
+        const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (!pngBlob) {{
+          throw new Error("截图生成失败");
+        }}
+        await navigator.clipboard.write([
+          new ClipboardItem({{ "image/png": pngBlob }})
+        ]);
+        button.textContent = "已复制到剪贴板";
+      }} catch (error) {{
+        console.error(error);
+        button.textContent = "复制失败";
+      }}
+      setTimeout(() => {{
+        button.disabled = false;
+        button.textContent = originalText;
+      }}, 1600);
+    }}
+  </script>
 </body>
 </html>
 """
+
+
+def mask_subscription_url(url: str) -> str:
+    if len(url) <= 24:
+        return "*" * len(url)
+    return f"{url[:20]}...{url[-10:]}"
 
 
 def parse_curl_failure_reason(returncode: int, stdout: str, stderr: str) -> str:
@@ -694,6 +801,10 @@ def parse_curl_failure_reason(returncode: int, stdout: str, stderr: str) -> str:
 
 def open_report(path: Path) -> bool:
     return webbrowser.open(path.resolve().as_uri())
+
+
+def get_report_dir() -> Path:
+    return Path(tempfile.gettempdir()) / "speedia"
 
 
 def get_managed_version_dir(version: str) -> Path:
@@ -864,10 +975,11 @@ def main() -> None:
             "subscription_url": sub_url,
             "results": results,
         }
-        cwd = Path.cwd()
-        out_path = cwd / "speed_results.json"
+        report_dir = get_report_dir()
+        report_dir.mkdir(parents=True, exist_ok=True)
+        out_path = report_dir / "speed_results.json"
         out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-        html_path = cwd / "speed_results.html"
+        html_path = report_dir / "speed_results.html"
         html_path.write_text(render_html_report(group, tested_at, sub_url, results), encoding="utf-8")
         print(f"[done] Saved: {out_path}")
         print(f"[done] Saved: {html_path}")

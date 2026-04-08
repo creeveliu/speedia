@@ -34,6 +34,8 @@ speedia uninstall
 speedia "https://example.com/sub"
 ```
 
+结果会写到系统临时目录下的 `speedia/` 子目录，不会落到当前项目目录。
+
 ### `speedia update`
 
 更新到最新 release 版本。
@@ -69,7 +71,7 @@ uv run speedia "<SUB_URL>"
 运行完成后会生成：
 
 - `speed_results.json`（完整测速结果，保持订阅原始顺序）
-- `speed_results.html`（本地网页汇总，方便完整查看结果，生成后会自动打开）
+- `speed_results.html`（本地网页汇总，生成后会自动打开；订阅链接默认打码，可点小眼睛显示，也可一键截图复制到剪贴板）
 
 ## 当前实现
 

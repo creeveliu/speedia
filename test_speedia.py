@@ -182,6 +182,10 @@ class ReportTests(unittest.TestCase):
         self.assertIn("测试时间：2026-04-08 12:57:57", html)
         self.assertIn("节点数：1", html)
         self.assertIn("https://example.com/sub", html)
+        self.assertIn("订阅链接：", html)
+        self.assertIn("toggleSubUrl", html)
+        self.assertIn("分享截图", html)
+        self.assertIn("已隐藏", html)
 
     def test_open_report_uses_browser_with_file_uri(self) -> None:
         path = Path("/tmp/speed_results.html")
@@ -190,6 +194,12 @@ class ReportTests(unittest.TestCase):
 
         self.assertEqual(result, True)
         mock_open.assert_called_once_with(path.resolve().as_uri())
+
+    def test_get_report_dir_uses_system_temp_dir(self) -> None:
+        with patch("speedia.tempfile.gettempdir", return_value="/tmp/test-root"):
+            report_dir = speedia.get_report_dir()
+
+        self.assertEqual(report_dir, Path("/tmp/test-root") / "speedia")
 
 
 class CurlResultTests(unittest.TestCase):
