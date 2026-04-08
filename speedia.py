@@ -26,7 +26,7 @@ from requests.exceptions import RequestException
 DEFAULT_SECRET = "speedia"
 REPO_OWNER = "creeveliu"
 REPO_NAME = "speedia"
-DEFAULT_VERSION = "0.1.2"
+DEFAULT_VERSION = "0.1.3"
 GROUP = ""  # 留空会自动选节点最多的组
 LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
 
