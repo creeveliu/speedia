@@ -1,6 +1,6 @@
 # Speedia
 
-批量测速 Clash/Mihomo 订阅节点的脚本，命令入口是 `speedia`。
+批量测试订阅节点速度的脚本。
 
 ## 一键安装
 
