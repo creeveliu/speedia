@@ -4,7 +4,7 @@
 
 ## 一键安装
 
-推荐直接用一键脚本安装：
+推荐直接用一键脚本安装（请保证网络畅通，githubusercontent对网络要求较高）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/creeveliu/speedia/main/install.sh | bash
