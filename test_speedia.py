@@ -124,6 +124,7 @@ class ReportTests(unittest.TestCase):
         html = speedia.render_html_report(
             "🤖 OpenAi",
             "2026-04-08 12:57:57",
+            "https://example.com/sub",
             [{"node": "节点A", "mbps": 12.34, "status": "ok"}],
         )
 
@@ -131,6 +132,7 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("🤖 OpenAi", html)
         self.assertIn("测试时间：2026-04-08 12:57:57", html)
         self.assertIn("节点数：1", html)
+        self.assertIn("https://example.com/sub", html)
 
     def test_open_report_uses_browser_with_file_uri(self) -> None:
         path = Path("/tmp/speed_results.html")

@@ -518,7 +518,7 @@ def pick_group(proxies: dict) -> tuple[str, list[str]]:
     return cands[0][1], cands[0][2]
 
 
-def render_html_report(group: str, tested_at: str, results: list[dict]) -> str:
+def render_html_report(group: str, tested_at: str, subscription_url: str, results: list[dict]) -> str:
     rows = []
     for index, item in enumerate(results, 1):
         status = "成功" if item["status"] == "ok" else "失败"
@@ -595,6 +595,7 @@ def render_html_report(group: str, tested_at: str, results: list[dict]) -> str:
   <div class="wrap">
     <h1>Speedia 测速结果</h1>
     <p class="meta">测试时间：{html.escape(tested_at)} · 节点数：{len(results)}</p>
+    <p class="meta">订阅链接：{html.escape(subscription_url)}</p>
     <div class="card">
       <table>
         <thead>
@@ -721,13 +722,14 @@ def main() -> None:
             "group": group,
             "tested_count": len(nodes),
             "tested_at": tested_at,
+            "subscription_url": sub_url,
             "results": results,
         }
         cwd = Path.cwd()
         out_path = cwd / "speed_results.json"
         out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
         html_path = cwd / "speed_results.html"
-        html_path.write_text(render_html_report(group, tested_at, results), encoding="utf-8")
+        html_path.write_text(render_html_report(group, tested_at, sub_url, results), encoding="utf-8")
         print(f"[done] Saved: {out_path}")
         print(f"[done] Saved: {html_path}")
         if open_report(html_path):

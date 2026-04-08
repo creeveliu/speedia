@@ -55,6 +55,7 @@ uv run speedia "<SUB_URL>"
   "group": "GLOBAL",
   "tested_count": 50,
   "tested_at": "2026-04-08 12:00:00",
+  "subscription_url": "https://example.com/sub",
   "results": [
     { "node": "节点A", "mbps": 11.63, "status": "ok" },
     { "node": "节点B", "mbps": null, "status": "fail", "reason": "timeout" }
