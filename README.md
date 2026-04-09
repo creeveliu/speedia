@@ -91,6 +91,18 @@ uv sync
 uv run speedia "<SUB_URL>"
 ```
 
+手动 smoke test：
+
+```bash
+cd /Users/cl/Projects/speedia
+python3 smoke_test.py --limit 1 "<SUB_URL>"
+```
+
+说明：
+
+- 这个 smoke test 会真实跑一遍测速流程，并检查 `speed_results.json/html` 是否生成
+- 默认不会自动触发，因为它需要真实订阅输入，适合作为发布前手动验证
+
 运行完成后会生成：
 
 - `speed_results.json`（完整测速结果，保持订阅原始顺序）
