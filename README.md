@@ -103,7 +103,7 @@ uv run speedia "<SUB_URL>"
    - `redir-port: 0`
    - `external-controller: 127.0.0.1:19090`
 3. 对订阅做测速专用处理：
-   - 原生 Clash/Mihomo YAML：保留原配置结构，只注入隔离端口和本地 API 密钥
+   - 原生 Clash/Mihomo YAML：提取 `proxies` 生成最小测速配置，不依赖原订阅里的 DNS、规则、`proxy-providers`、`rule-providers`
    - Shadowrocket URI：转换为只用于测速的最小 Mihomo 配置
 4. 优先使用系统 `mihomo`；没有则自动下载 `v1.19.23` 对应平台二进制到 `~/.cache/speedia/mihomo`，后续直接复用。
 5. 启动临时 Mihomo 实例，调用 REST API：

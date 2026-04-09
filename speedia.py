@@ -166,7 +166,7 @@ def looks_like_url(text: str) -> bool:
 
 def prepare_config_text_from_raw(raw_text: str) -> tuple[str, str]:
     if "proxies:" in raw_text or "proxy-providers:" in raw_text:
-        return patch_config(raw_text), "clash"
+        return build_generated_config_from_clash_yaml(raw_text), "clash"
 
     if "://" in raw_text:
         proxies = parse_uri_subscription(raw_text)
@@ -176,7 +176,7 @@ def prepare_config_text_from_raw(raw_text: str) -> tuple[str, str]:
     decoded = maybe_decode_base64_text(raw_text)
     if decoded:
         if "proxies:" in decoded or "proxy-providers:" in decoded:
-            return patch_config(decoded), "clash"
+            return build_generated_config_from_clash_yaml(decoded), "clash"
         if "://" in decoded:
             proxies = parse_uri_subscription(decoded)
             if proxies:

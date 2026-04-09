@@ -72,7 +72,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertIn(f"secret: {speedia.DEFAULT_SECRET}\n", patched)
 
-    def test_prepare_config_text_keeps_clash_yaml_structure(self) -> None:
+    def test_prepare_config_text_builds_minimal_config_from_clash_yaml(self) -> None:
         raw = """
 proxies:
   - name: Node A
@@ -89,10 +89,42 @@ rules:
             config_text, source_type = speedia.prepare_config_text("https://example.com/sub")
 
         self.assertEqual(source_type, "clash")
+        self.assertIn('port: 17890', config_text)
         self.assertIn("name: Node A", config_text)
-        self.assertIn("secret: speedia", config_text)
+        self.assertIn('secret: "speedia"', config_text)
+        self.assertIn('name: "Auto"', config_text)
         self.assertIn('rules:', config_text)
-        self.assertIn("GEOIP,CN,DIRECT", config_text)
+        self.assertIn('MATCH,Auto', config_text)
+        self.assertNotIn("GEOIP,CN,DIRECT", config_text)
+
+    def test_prepare_config_text_drops_remote_clash_dependencies(self) -> None:
+        raw = """
+proxy-providers:
+  provider-a:
+    type: http
+    url: https://example.com/provider.yaml
+proxies:
+  - name: Node A
+    type: ss
+    server: 1.1.1.1
+    port: 443
+    cipher: aes-128-gcm
+    password: pass
+rule-providers:
+  reject:
+    type: http
+    url: https://example.com/reject.yaml
+rules:
+  - RULE-SET,reject,REJECT
+"""
+
+        config_text, source_type = speedia.prepare_config_text(raw)
+
+        self.assertEqual(source_type, "clash")
+        self.assertNotIn("proxy-providers:", config_text)
+        self.assertNotIn("rule-providers:", config_text)
+        self.assertNotIn("https://example.com/provider.yaml", config_text)
+        self.assertIn('MATCH,Auto', config_text)
 
     def test_prepare_config_text_accepts_direct_base64_subscription_content(self) -> None:
         raw = "dm1lc3M6Ly9leUpoWkdRaU9pSXhMakV1TVM0eElpd2ljRzl5ZENJNklqUTBNeUlzSW1sa0lqb2lkWFZwWkNJc0luQnpJam9pYm05a1pTSjk="
