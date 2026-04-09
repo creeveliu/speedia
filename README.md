@@ -1,6 +1,6 @@
 # Speedia
 
-批量测试订阅节点速度的脚本。
+批量测试订阅节点速度的脚本，这个下载速度比ping值更贴近用户实际使用的感受。
 
 <img width="2186" height="1582" alt="image" src="https://github.com/user-attachments/assets/cd20134e-59ae-4b78-bd8b-19cbf97408c5" />
 
