@@ -86,11 +86,12 @@ rules:
 """
 
         with patch("speedia.fetch_url_bytes", return_value=raw.encode("utf-8")):
-            config_text, source_type = speedia.prepare_config_text("https://example.com/sub")
+            config_text, source_type, node_names = speedia.prepare_config_text("https://example.com/sub")
 
         self.assertEqual(source_type, "clash")
+        self.assertEqual(node_names, ["Node A"])
         self.assertIn('port: 17890', config_text)
-        self.assertIn("name: Node A", config_text)
+        self.assertIn('name: "Node A"', config_text)
         self.assertIn('secret: "speedia"', config_text)
         self.assertIn('name: "Auto"', config_text)
         self.assertIn('rules:', config_text)
@@ -118,9 +119,10 @@ rules:
   - RULE-SET,reject,REJECT
 """
 
-        config_text, source_type = speedia.prepare_config_text(raw)
+        config_text, source_type, node_names = speedia.prepare_config_text(raw)
 
         self.assertEqual(source_type, "clash")
+        self.assertEqual(node_names, ["Node A"])
         self.assertNotIn("proxy-providers:", config_text)
         self.assertNotIn("rule-providers:", config_text)
         self.assertNotIn("https://example.com/provider.yaml", config_text)
@@ -129,9 +131,10 @@ rules:
     def test_prepare_config_text_accepts_direct_base64_subscription_content(self) -> None:
         raw = "dm1lc3M6Ly9leUpoWkdRaU9pSXhMakV1TVM0eElpd2ljRzl5ZENJNklqUTBNeUlzSW1sa0lqb2lkWFZwWkNJc0luQnpJam9pYm05a1pTSjk="
 
-        config_text, source_type = speedia.prepare_config_text(raw)
+        config_text, source_type, node_names = speedia.prepare_config_text(raw)
 
         self.assertEqual(source_type, "shadowrocket")
+        self.assertEqual(node_names, ["node"])
         self.assertIn('type: "vmess"', config_text)
         self.assertIn('name: "node"', config_text)
 
@@ -143,6 +146,18 @@ rules:
 
         self.assertIn("订阅链接访问失败", str(ctx.exception))
         self.assertIn("也可以直接传入订阅内容或 base64", str(ctx.exception))
+
+    def test_build_generated_config_uses_proxy_names_for_auto_group(self) -> None:
+        config_text = speedia.build_generated_config(
+            [
+                {"name": "A", "type": "ss", "server": "1.1.1.1", "port": 443, "cipher": "aes-128-gcm", "password": "x"},
+                {"name": "B", "type": "ss", "server": "2.2.2.2", "port": 443, "cipher": "aes-128-gcm", "password": "y"},
+            ]
+        )
+
+        self.assertIn('name: "Auto"', config_text)
+        self.assertIn('- "A"', config_text)
+        self.assertIn('- "B"', config_text)
 
     def test_parse_vless_preserves_tls_fingerprint_and_ech(self) -> None:
         uri = (
@@ -219,16 +234,13 @@ class CliTests(unittest.TestCase):
 
 
 class ReportTests(unittest.TestCase):
-    def test_html_report_hides_group_from_meta(self) -> None:
+    def test_html_report_shows_test_info(self) -> None:
         html = speedia.render_html_report(
-            "🤖 OpenAi",
             "2026-04-08 12:57:57",
             "https://example.com/sub",
             [{"node": "节点A", "mbps": 12.34, "status": "ok"}],
         )
 
-        self.assertNotIn("策略组：", html)
-        self.assertNotIn("🤖 OpenAi", html)
         self.assertIn("测试时间：2026-04-08 12:57:57", html)
         self.assertIn("节点数：1", html)
         self.assertIn("https://example.com/sub", html)

@@ -116,8 +116,8 @@ uv run speedia "<SUB_URL>"
 ## 可配置项（在 `speedia.py` 顶部）
 
 - `DEFAULT_SECRET`：临时 Mihomo API 密钥，脚本会统一写成这个固定值
-- `GROUP`：要测试的策略组名称，留空会自动选节点最多的组
 - `LIMIT`：本轮最多测速节点数
+- `PROXY_URL`：测速请求走的本地代理地址，默认 `socks5://127.0.0.1:17891`
 - `TEST_URL`：测速下载地址
 - `MAX_TIME`：单节点测速超时（秒）
 
@@ -132,7 +132,6 @@ uv run speedia "<SUB_URL>"
 
 ```json
 {
-  "group": "GLOBAL",
   "tested_count": 50,
   "tested_at": "2026-04-08 12:00:00",
   "subscription_url": "https://example.com/sub",

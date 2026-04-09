@@ -29,12 +29,11 @@ from requests.exceptions import RequestException
 DEFAULT_SECRET = "speedia"
 REPO_OWNER = "creeveliu"
 REPO_NAME = "speedia"
-DEFAULT_VERSION = "0.1.8"
-GROUP = ""  # 留空会自动选节点最多的组
+DEFAULT_VERSION = "0.1.9"
 LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
 
 API = "http://127.0.0.1:19090"
-HTTP_PROXY = "http://127.0.0.1:17893"
+PROXY_URL = "socks5://127.0.0.1:17891"
 TEST_URL = "https://speed.cloudflare.com/__down?bytes=2000000"
 MAX_TIME = 16
 REPORT_SERVER_IDLE_TIMEOUT = 900
@@ -164,27 +163,6 @@ def looks_like_url(text: str) -> bool:
     return value.startswith("http://") or value.startswith("https://")
 
 
-def prepare_config_text_from_raw(raw_text: str) -> tuple[str, str]:
-    if "proxies:" in raw_text or "proxy-providers:" in raw_text:
-        return build_generated_config_from_clash_yaml(raw_text), "clash"
-
-    if "://" in raw_text:
-        proxies = parse_uri_subscription(raw_text)
-        if proxies:
-            return build_generated_config(proxies), "shadowrocket"
-
-    decoded = maybe_decode_base64_text(raw_text)
-    if decoded:
-        if "proxies:" in decoded or "proxy-providers:" in decoded:
-            return build_generated_config_from_clash_yaml(decoded), "clash"
-        if "://" in decoded:
-            proxies = parse_uri_subscription(decoded)
-            if proxies:
-                return build_generated_config(proxies), "shadowrocket"
-
-    raise RuntimeError(tr("unsupported_format"))
-
-
 def get_cache_dir() -> Path:
     xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
     base = Path(xdg_cache_home).expanduser() if xdg_cache_home else Path.home() / ".cache"
@@ -294,6 +272,78 @@ def decode_yaml_scalar(text: str) -> str:
     return value
 
 
+def parse_inline_flow_dict(text: str) -> dict:
+    """Parse YAML inline flow style dict like {key: value, key2: value2}."""
+    result = {}
+    if not text.startswith("{") or not text.endswith("}"):
+        return result
+    content = text[1:-1]
+    i = 0
+    while i < len(content):
+        # Skip whitespace
+        while i < len(content) and content[i] in " \t":
+            i += 1
+        if i >= len(content):
+            break
+        # Find key
+        key_start = i
+        while i < len(content) and content[i] != ":":
+            i += 1
+        if i >= len(content):
+            break
+        key = content[key_start:i].strip()
+        i += 1  # skip colon
+        # Skip whitespace after colon
+        while i < len(content) and content[i] in " \t":
+            i += 1
+        # Find value
+        value_start = i
+        if i < len(content) and content[i] == '"':
+            # Quoted string
+            i += 1
+            value_start = i
+            while i < len(content) and content[i] != '"':
+                if content[i] == "\\" and i + 1 < len(content):
+                    i += 2
+                else:
+                    i += 1
+            value = content[value_start:i]
+            i += 1  # skip closing quote
+        elif i < len(content) and content[i] == "'":
+            # Single quoted string
+            i += 1
+            value_start = i
+            while i < len(content) and content[i] != "'":
+                i += 1
+            value = content[value_start:i]
+            i += 1  # skip closing quote
+        else:
+            # Unquoted value - find comma or end
+            while i < len(content) and content[i] != ",":
+                i += 1
+            value = content[value_start:i].strip()
+            # Remove trailing }
+            if value.endswith("}"):
+                value = value[:-1].strip()
+        # Convert to proper type
+        if value.lower() == "true":
+            result[key] = True
+        elif value.lower() == "false":
+            result[key] = False
+        elif value.isdigit():
+            result[key] = int(value)
+        elif value.startswith('"') and value.endswith('"'):
+            result[key] = value[1:-1]
+        elif value.startswith("'") and value.endswith("'"):
+            result[key] = value[1:-1]
+        else:
+            result[key] = value
+        # Skip comma
+        if i < len(content) and content[i] == ",":
+            i += 1
+    return result
+
+
 def extract_clash_proxies_block(config_text: str) -> tuple[list[str], list[str]]:
     lines = config_text.splitlines()
     start = None
@@ -304,29 +354,51 @@ def extract_clash_proxies_block(config_text: str) -> tuple[list[str], list[str]]
     if start is None:
         raise RuntimeError("Subscription does not contain a top-level proxies section")
 
-    block = ["proxies:"]
+    proxies = []
     names = []
-    current_item_started = False
-    for line in lines[start + 1 :]:
+    current_proxy: dict | None = None
+
+    for line in lines[start + 1:]:
         if line and line == line.lstrip():
             break
         if not line.strip():
-            block.append(line)
             continue
-        block.append(line)
 
         stripped = line.strip()
         if stripped.startswith("- "):
-            current_item_started = True
+            # New proxy entry
+            if current_proxy:
+                proxies.append(current_proxy)
             remainder = stripped[2:].strip()
-            if remainder.startswith("name:"):
-                names.append(decode_yaml_scalar(remainder.split(":", 1)[1]))
+            if remainder.startswith("{") and remainder.endswith("}"):
+                # Inline flow style: parse and convert
+                current_proxy = parse_inline_flow_dict(remainder)
+                name = current_proxy.get("name", "")
+                if name:
+                    names.append(name)
             else:
-                match = re.search(r"(?:^|[,{]\s*)name:\s*([^,}]+)", remainder)
-                if match:
-                    names.append(decode_yaml_scalar(match.group(1)))
-        elif current_item_started and stripped.startswith("name:"):
-            names.append(decode_yaml_scalar(stripped.split(":", 1)[1]))
+                # Multi-line style
+                current_proxy = {}
+                if remainder.startswith("name:"):
+                    name = decode_yaml_scalar(remainder.split(":", 1)[1])
+                    current_proxy["name"] = name
+                    names.append(name)
+        elif current_proxy is not None and ":" in stripped:
+            # Multi-line key: value
+            key, value = stripped.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            current_proxy[key] = decode_yaml_scalar(value) if value else ""
+            if key == "name" and value:
+                names.append(decode_yaml_scalar(value))
+
+    if current_proxy:
+        proxies.append(current_proxy)
+
+    # Regenerate proxies block with proper quoting
+    block = ["proxies:"]
+    for proxy in proxies:
+        block.extend(yaml_lines([proxy], indent=2))
 
     deduped_names = [name for i, name in enumerate(names) if name and name not in names[:i]]
     if not deduped_names:
@@ -579,7 +651,7 @@ def build_generated_config(proxies: list[dict]) -> str:
     return "\n".join(yaml_lines(config)) + "\n"
 
 
-def build_generated_config_from_clash_yaml(config_text: str) -> str:
+def build_generated_config_from_clash_yaml(config_text: str) -> tuple[str, list[str]]:
     proxies_block, names = extract_clash_proxies_block(config_text)
     config_lines = [
         f'port: 17890',
@@ -600,10 +672,33 @@ def build_generated_config_from_clash_yaml(config_text: str) -> str:
         "rules:",
         '  - "MATCH,Auto"',
     ]
-    return "\n".join(config_lines) + "\n"
+    return "\n".join(config_lines) + "\n", names
 
 
-def prepare_config_text(target: str) -> tuple[str, str]:
+def prepare_config_text_from_raw(raw_text: str) -> tuple[str, str, list[str]]:
+    if "proxies:" in raw_text or "proxy-providers:" in raw_text:
+        config_text, names = build_generated_config_from_clash_yaml(raw_text)
+        return config_text, "clash", names
+
+    if "://" in raw_text:
+        proxies = parse_uri_subscription(raw_text)
+        if proxies:
+            return build_generated_config(proxies), "shadowrocket", [proxy["name"] for proxy in proxies]
+
+    decoded = maybe_decode_base64_text(raw_text)
+    if decoded:
+        if "proxies:" in decoded or "proxy-providers:" in decoded:
+            config_text, names = build_generated_config_from_clash_yaml(decoded)
+            return config_text, "clash", names
+        if "://" in decoded:
+            proxies = parse_uri_subscription(decoded)
+            if proxies:
+                return build_generated_config(proxies), "shadowrocket", [proxy["name"] for proxy in proxies]
+
+    raise RuntimeError(tr("unsupported_format"))
+
+
+def prepare_config_text(target: str) -> tuple[str, str, list[str]]:
     if looks_like_url(target):
         try:
             raw_text = fetch_url_bytes(target).decode("utf-8", errors="replace")
@@ -616,30 +711,7 @@ def prepare_config_text(target: str) -> tuple[str, str]:
     return prepare_config_text_from_raw(target)
 
 
-def pick_group(proxies: dict) -> tuple[str, list[str]]:
-    if GROUP and GROUP in proxies and proxies[GROUP].get("all"):
-        nodes = proxies[GROUP].get("all", [])
-        return GROUP, nodes
-
-    cands = []
-    for name, v in proxies.items():
-        if v.get("type") in ("Selector", "URLTest", "Fallback", "LoadBalance"):
-            real = []
-            for n in v.get("all", []):
-                if n not in proxies:
-                    continue
-                t = proxies[n].get("type")
-                if t in ("Selector", "URLTest", "Fallback", "LoadBalance", "Direct", "Reject"):
-                    continue
-                real.append(n)
-            cands.append((len(real), name, real))
-    cands.sort(reverse=True)
-    if not cands or not cands[0][2]:
-        raise RuntimeError("No testable proxy group found")
-    return cands[0][1], cands[0][2]
-
-
-def render_html_report(group: str, tested_at: str, subscription_url: str, results: list[dict]) -> str:
+def render_html_report(tested_at: str, subscription_url: str, results: list[dict]) -> str:
     masked_subscription_url = mask_subscription_url(subscription_url)
     rows = []
     for index, item in enumerate(results, 1):
@@ -1143,7 +1215,7 @@ def main() -> None:
     cfg_path = workdir / "config.yaml"
     print(f"[info] Workdir: {workdir}")
 
-    config_text, source_type = prepare_config_text(sub_url)
+    config_text, source_type, node_names = prepare_config_text(sub_url)
     cfg_path.write_text(config_text, encoding="utf-8")
     print(f"[info] Subscription type: {source_type}")
 
@@ -1172,15 +1244,17 @@ def main() -> None:
             detail = f": {stderr_text}" if stderr_text else ""
             raise RuntimeError(f"Mihomo API not ready{detail}")
 
-        proxies = requests.get(f"{API}/proxies", headers=headers, timeout=10).json()["proxies"]
-        group, nodes = pick_group(proxies)
-        nodes = nodes[:LIMIT]
+        nodes = node_names[:LIMIT]
+        if not nodes:
+            raise RuntimeError("No proxy nodes found")
         print(f"[info] Testing {len(nodes)} nodes")
+
+        switch_group = "Auto"
 
         results = []
         for i, node in enumerate(nodes, 1):
             requests.put(
-                f"{API}/proxies/{urllib.parse.quote(group, safe='')}",
+                f"{API}/proxies/{urllib.parse.quote(switch_group, safe='')}",
                 headers=headers,
                 json={"name": node},
                 timeout=8,
@@ -1195,7 +1269,7 @@ def main() -> None:
                 "-w",
                 "%{http_code} %{speed_download}",
                 "--proxy",
-                HTTP_PROXY,
+                PROXY_URL,
                 "--max-time",
                 str(MAX_TIME),
                 TEST_URL,
@@ -1220,7 +1294,6 @@ def main() -> None:
 
         tested_at = time.strftime("%Y-%m-%d %H:%M:%S")
         out = {
-            "group": group,
             "tested_count": len(nodes),
             "tested_at": tested_at,
             "subscription_url": sub_url,
@@ -1231,7 +1304,7 @@ def main() -> None:
         out_path = report_dir / "speed_results.json"
         out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
         html_path = report_dir / "speed_results.html"
-        html_path.write_text(render_html_report(group, tested_at, sub_url, results), encoding="utf-8")
+        html_path.write_text(render_html_report(tested_at, sub_url, results), encoding="utf-8")
         print(f"[done] Saved: {out_path}")
         print(f"[done] Saved: {html_path}")
         opened, report_url = open_report(html_path)
