@@ -189,6 +189,19 @@ class CliTests(unittest.TestCase):
         args = speedia.parse_args(["https://example.com/sub"])
         self.assertEqual(args.command, "test")
         self.assertEqual(args.sub_url, "https://example.com/sub")
+        self.assertEqual(args.limit, speedia.LIMIT)
+
+    def test_parse_args_supports_limit_override(self) -> None:
+        args = speedia.parse_args(["--limit", "12", "https://example.com/sub"])
+        self.assertEqual(args.command, "test")
+        self.assertEqual(args.sub_url, "https://example.com/sub")
+        self.assertEqual(args.limit, 12)
+
+    def test_parse_args_supports_unlimited_limit(self) -> None:
+        args = speedia.parse_args(["--limit", "0", "https://example.com/sub"])
+        self.assertEqual(args.command, "test")
+        self.assertEqual(args.sub_url, "https://example.com/sub")
+        self.assertEqual(args.limit, 0)
 
     def test_parse_args_supports_update(self) -> None:
         args = speedia.parse_args(["update"])

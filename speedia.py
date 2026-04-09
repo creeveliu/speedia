@@ -29,8 +29,8 @@ from requests.exceptions import RequestException
 DEFAULT_SECRET = "speedia"
 REPO_OWNER = "creeveliu"
 REPO_NAME = "speedia"
-DEFAULT_VERSION = "0.1.9"
-LIMIT = 50  # 每轮测速节点数，先用 20~50 更稳
+DEFAULT_VERSION = "0.1.10"
+LIMIT = 32  # 默认测速节点数
 
 API = "http://127.0.0.1:19090"
 PROXY_URL = "socks5://127.0.0.1:17891"
@@ -103,6 +103,7 @@ def parse_release_version_from_url(url: str) -> str | None:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Batch speed test for Clash/Mihomo subscriptions")
     parser.add_argument("--version", action="version", version=f"%(prog)s {get_display_version()}")
+    parser.add_argument("--limit", type=int, default=LIMIT, help="Max number of proxies to test")
     parser.add_argument("target", help="Subscription URL to test, or update/uninstall")
     args = parser.parse_args(argv)
     if args.target in {"update", "uninstall"}:
@@ -1244,7 +1245,7 @@ def main() -> None:
             detail = f": {stderr_text}" if stderr_text else ""
             raise RuntimeError(f"Mihomo API not ready{detail}")
 
-        nodes = node_names[:LIMIT]
+        nodes = node_names if args.limit <= 0 else node_names[: args.limit]
         if not nodes:
             raise RuntimeError("No proxy nodes found")
         print(f"[info] Testing {len(nodes)} nodes")

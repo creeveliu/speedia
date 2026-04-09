@@ -17,6 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/creeveliu/speedia/main/install.sh |
 
 ```bash
 speedia "<SUB_URL>"
+speedia --limit 10 "<SUB_URL>"
 speedia update
 speedia uninstall
 ```
@@ -48,9 +49,15 @@ speedia uninstall
 
 ```bash
 speedia "https://example.com/sub"
+speedia --limit 10 "https://example.com/sub"
 ```
 
 结果会写到系统临时目录下的 `speedia/` 子目录，不会落到当前项目目录。
+
+可选参数：
+
+- `--limit <数字>`：本次最多测速多少个节点，覆盖默认值（默认 `32`）
+  - 传 `0` 表示不限，测试全部节点
 
 ### `speedia update`
 
@@ -116,13 +123,14 @@ uv run speedia "<SUB_URL>"
 ## 可配置项（在 `speedia.py` 顶部）
 
 - `DEFAULT_SECRET`：临时 Mihomo API 密钥，脚本会统一写成这个固定值
-- `LIMIT`：本轮最多测速节点数
+- `LIMIT`：默认最多测速节点数
 - `PROXY_URL`：测速请求走的本地代理地址，默认 `socks5://127.0.0.1:17891`
 - `TEST_URL`：测速下载地址
 - `MAX_TIME`：单节点测速超时（秒）
 
 当前默认值：
 
+- `LIMIT = 32`
 - `TEST_URL = https://speed.cloudflare.com/__down?bytes=2000000`
 - `MAX_TIME = 16`
 
@@ -132,7 +140,7 @@ uv run speedia "<SUB_URL>"
 
 ```json
 {
-  "tested_count": 50,
+  "tested_count": 32,
   "tested_at": "2026-04-08 12:00:00",
   "subscription_url": "https://example.com/sub",
   "results": [
